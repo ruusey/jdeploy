@@ -40,7 +40,7 @@
 	</dependencies>
 
 	<build>
-		<finalName>jrealm</finalName>
+		<finalName>jdeploy</finalName>
 		<plugins>
 			<plugin>
 				<artifactId>maven-assembly-plugin</artifactId>
