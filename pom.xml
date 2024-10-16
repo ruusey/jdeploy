@@ -52,7 +52,7 @@
 					</descriptorRefs>
 					<archive>
 						<manifest>
-							<mainClass>com.psydex.util.DeploymentHelper</mainClass>
+							<mainClass>com.jdeploy.service.DeploymentHelper</mainClass>
 						</manifest>
 					</archive>
 				</configuration>
