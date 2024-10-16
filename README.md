@@ -10,7 +10,7 @@ To use jdeploy simply run the target jar with the following parameters:
 * -u Remote user to log in with
 * -p Remote port to connect over - usually 22
 * -h Remote host to connect to
-* -t Tarrget file path on the remote machine
+* -t Target file path on the remote machine
 * -s Source local file to upload to the remote machine
 * -i (optional) RSA private key path
 * -y (optional) Remote user password
