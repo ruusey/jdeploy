@@ -1,4 +1,4 @@
-# jdeploy
+# jdeploy - Java SFTP and Remote SSH Deployment Helper
 ## EZ java deploy to most Linux based distros
 
 ## Usage
