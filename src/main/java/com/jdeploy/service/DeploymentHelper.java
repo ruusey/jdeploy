@@ -1,6 +1,10 @@
 package com.jdeploy.service;
 
 import java.io.File;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Properties;
 
@@ -9,24 +13,22 @@ import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.DefaultParser;
 import org.apache.commons.cli.HelpFormatter;
 import org.apache.commons.cli.Options;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.jcraft.jsch.UserInfo;
 
 import com.jcraft.jsch.Channel;
 import com.jcraft.jsch.ChannelExec;
 import com.jcraft.jsch.ChannelSftp;
+import com.jcraft.jsch.ChannelShell;
 import com.jcraft.jsch.JSch;
 import com.jcraft.jsch.Session;
 
+import lombok.extern.slf4j.Slf4j;
+@Slf4j
 public class DeploymentHelper {
-	private static final Logger LOGGER = LoggerFactory.getLogger(DeploymentHelper.class);
-
 	private Session session = null;
 	private Channel sftpChannel = null;
-	private ChannelSftp channelSftp = null;
-
 	private Channel execChannel = null;
-	private ChannelExec channelExec = null;
+	private Channel shellChannel = null;
 
 	public DeploymentHelper(String remoteHost, Integer remotePort, String user, String password, String keyFile) {
 		final JSch jsch = new JSch();
@@ -40,25 +42,90 @@ public class DeploymentHelper {
 			}
 			final Properties config = new Properties();
 			config.put("StrictHostKeyChecking", "no");
+	        config.put("PreferredAuthentications", "publickey,gssapi-keyex,gssapi-with-mic,keyboard-interactive");
+	        config.put("UseDNS", "no");
+	        final UserInfo ui= new AuhenticatedUser();
+	        this.session.setUserInfo(ui);
 			this.session.setConfig(config);
-			this.session.connect(60000);
+			this.session.connect(15000);
 			this.sftpChannel = this.session.openChannel("sftp");
 			this.sftpChannel.connect();
-			this.channelSftp = (ChannelSftp) this.sftpChannel;
+			
+			this.shellChannel = this.session.openChannel("shell");
+			this.shellChannel.connect();
+			
+			
+			this.execChannel = this.session.openChannel("exec");
+			this.execChannel.connect();
+
 		} catch (Exception e) {
-			LOGGER.error("Failed to establish SSH session. Reason: {}", e);
+			log.error("Failed to establish SSH session. Reason: {}", e);
 		}
+	}
+	
+	public ChannelSftp getSftpChannel() {
+		return ((ChannelSftp) this.sftpChannel);
+	}
+	
+	public ChannelExec getExecChannel() {
+		return ((ChannelExec) this.execChannel);
+	}
+	
+	public ChannelShell getShellChannel() {
+		return ((ChannelShell) this.shellChannel);
 	}
 
 	public void termiateSession() {
 		try {
 			this.sftpChannel.disconnect();
-			this.channelSftp.disconnect();
 			this.session.disconnect();
-			this.channelExec.disconnect();
 			this.execChannel.disconnect();
 		} catch (Exception e) {
-			LOGGER.error("Failed to clean up SSH resosurces. Reason: {}", e);
+			log.error("Failed to clean up SSH resosurces. Reason: {}", e);
+		}
+	}
+	
+	public String readShell() {
+		String shellContent = null;
+		try {
+			InputStream input = this.shellChannel.getInputStream();
+			int size = input.available();
+			if(size>0) {
+				byte[] buffer = new byte[input.available()];
+				shellContent = new String(buffer, StandardCharsets.UTF_8);
+			}
+			
+		}catch(Exception e) {
+			log.error("Failed to read remote shell. Reason: {}", e);
+		}
+		return shellContent;
+	}
+	
+	public String readExec() {
+		String shellContent = null;
+		try {
+			final InputStream input = this.getExecChannel().getInputStream();
+			final int size = input.available();
+			if(size>0) {
+				final byte[] buffer = new byte[input.available()];
+				shellContent = new String(buffer, StandardCharsets.UTF_8);
+			}
+			
+		}catch(Exception e) {
+			log.error("Failed to read remote shell. Reason: {}", e);
+		}
+		return shellContent;
+	}
+	
+	public void writeShell(String command) {
+		try {
+			final OutputStream input = this.shellChannel.getOutputStream();
+			final PrintWriter writer = new PrintWriter(input);
+			writer.write(command);
+			writer.flush();
+			//writer.close();
+		}catch(Exception e) {
+			log.error("Failed to write remote shell. Reason: {}", e);
 		}
 	}
 
@@ -66,7 +133,7 @@ public class DeploymentHelper {
 	// One to kill the existing processs
 	// Two to restart the new process
 	public void doKillRun(String sourceFile, String redirectOut) {
-		LOGGER.info("Performing kill and run of file {} with params {}", sourceFile, redirectOut);
+		log.info("Performing kill and run of file {} with params {}", sourceFile, redirectOut);
 		final String[] fileParts = extractFileParts(sourceFile);
 		final String extraParams = redirectOut == null ? "" : "> " + fileParts[0] + "/" + redirectOut;
 
@@ -78,26 +145,25 @@ public class DeploymentHelper {
 				this.doRun(command);
 				Thread.sleep(500);
 			}
-			LOGGER.info("Executed kill and run for file {}  in {}ms", sourceFile,
+			log.info("Executed kill and run for file {}  in {}ms", sourceFile,
 					(Instant.now().toEpochMilli() - start));
 		} catch (Exception e) {
-			LOGGER.error("Failed to execute Kill and Run command. Reason: {}", e);
+			log.error("Failed to execute Kill and Run command. Reason: {}", e);
 		}
 	}
 
 	public void doRun(String command) {
-		LOGGER.info("Performing run of command {} ", command);
+		log.info("Performing run of command {} ", command);
 		try {
 			final long start = Instant.now().toEpochMilli();
 			this.execChannel = this.session.openChannel("exec");
-			this.channelExec = ((ChannelExec) this.execChannel);
-			LOGGER.info("Executing remote shell command '{}'", command);
-			this.channelExec.setCommand(command);
+			log.info("Executing remote shell command '{}'", command);
+			this.getExecChannel().setCommand(command);
 			this.execChannel.connect();
 			this.execChannel.disconnect();
-			LOGGER.info("Executed run of command {}  in {}ms", command, (Instant.now().toEpochMilli() - start));
+			log.info("Executed run of command {}  in {}ms", command, (Instant.now().toEpochMilli() - start));
 		} catch (Exception e) {
-			LOGGER.error("Failed to execute Kill and Run command. Reason: {}", e);
+			log.error("Failed to execute Kill and Run command. Reason: {}", e);
 		}
 	}
 
@@ -111,15 +177,15 @@ public class DeploymentHelper {
 			// If the target file lies within a folder we need to CD to that folder
 			if (targetFile.indexOf("/") > -1) {
 				final String lastFolder = extractFileParts(targetFile)[0];
-				this.channelSftp.cd(lastFolder);
+				this.getSftpChannel().cd(lastFolder);
 			}
-			LOGGER.info("Storing file as remote filename: {} under path {}", extractFileParts(targetFile)[1],
+			log.info("Storing file as remote filename: {} under path {}", extractFileParts(targetFile)[1],
 					extractFileParts(targetFile)[0]);
 			final long transferStart = Instant.now().toEpochMilli();
-			this.channelSftp.put(new java.io.FileInputStream(f), extractFileParts(targetFile)[1]);
-			LOGGER.info("SFTP transfer successful in {}ms", (Instant.now().toEpochMilli() - transferStart));
+			this.getSftpChannel().put(new java.io.FileInputStream(f), extractFileParts(targetFile)[1]);
+			log.info("SFTP transfer successful in {}ms", (Instant.now().toEpochMilli() - transferStart));
 		} catch (Exception e) {
-			LOGGER.error("Storing remote file failed. Reason: {}", e);
+			log.error("Storing remote file failed. Reason: {}", e);
 		}
 	}
 
@@ -129,11 +195,11 @@ public class DeploymentHelper {
 			final long start = Instant.now().toEpochMilli();
 			this.doSftp(sourceFile, targetFile);
 			this.doKillRun(targetFile, "service-log.out");
-			LOGGER.info("Deployment of file {} to remote directory {} completed in {}ms",
+			log.info("Deployment of file {} to remote directory {} completed in {}ms",
 					extractFileParts(sourceFile)[1], targetFile, (Instant.now().toEpochMilli() - start));
 			this.termiateSession();
 		} catch (Exception e) {
-			LOGGER.error("Failed to deploy file {}. Reason: {}", sourceFile, e);
+			log.error("Failed to deploy file {}. Reason: {}", sourceFile, e);
 		}
 	}
 
@@ -142,11 +208,11 @@ public class DeploymentHelper {
 			final long start = Instant.now().toEpochMilli();
 			this.doSftp(sourceFile, targetFile);
 			this.doRun(commandToRun);
-			LOGGER.info("Deployment of file {} to remote directory {} completed in {}ms",
+			log.info("Deployment of file {} to remote directory {} completed in {}ms",
 					extractFileParts(sourceFile)[1], targetFile, (Instant.now().toEpochMilli() - start));
 			this.termiateSession();
 		} catch (Exception e) {
-			LOGGER.error("Failed to deploy file {}. Reason: {}", sourceFile, e);
+			log.error("Failed to deploy file {}. Reason: {}", sourceFile, e);
 		}
 	}
 
@@ -192,13 +258,16 @@ public class DeploymentHelper {
 
 			final String sourceFile = cmd.getOptionValue("source-file");
 			final String targetFile = cmd.getOptionValue("target-file");
-
 			final DeploymentHelper helper = new DeploymentHelper(host, Integer.parseInt(port), user, password, key);
-			helper.deployAndRun(sourceFile, targetFile);
-			
-			//helper.deployAndExecuteCommand(sourceFile, targetFile, "/opt/UPS/apiservice/deployment/script/deployPortalClaimService.sh");
+			helper.doSftp(sourceFile ,targetFile);
+			helper.doRun("chmod 777 "+targetFile);
+			System.out.println("NEXT STEPS:");
+			System.out.println("su upscapi");
+			System.out.println("/opt/UPS/portalservice/script/deploy{Service}.sh");
+			System.out.println("/opt/UPS/apiservice/script/deploy{Service}.sh");
+			helper.termiateSession();
 		} catch (Exception e) {
-			LOGGER.error("Failed to parse command line arguments. Reason: {}", e);
+			log.error("Failed to parse command line arguments. Reason: {}", e);
 		}
 	}
 }
