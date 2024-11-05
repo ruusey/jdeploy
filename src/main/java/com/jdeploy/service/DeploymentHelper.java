@@ -135,6 +135,7 @@ public class DeploymentHelper {
     // Two to restart the new process
     public void doKillRun(String sourceFile, String redirectOut) {
         log.info("Performing kill and run of file {} with params {}", sourceFile, redirectOut);
+        
         final String[] fileParts = extractFileParts(sourceFile);
         final String extraParams = redirectOut == null ? "" : "> " + fileParts[0] + "/" + redirectOut;
 
@@ -264,7 +265,7 @@ public class DeploymentHelper {
 //			System.out.println("su upscapi");
 //			System.out.println("/opt/UPS/portalservice/script/deploy{Service}.sh");
 //			System.out.println("/opt/UPS/apiservice/script/deploy{Service}.sh");
-//			helper.termiateSession();
+			helper.termiateSession();
         } catch (Exception e) {
             log.error("Failed to parse command line arguments. Reason: {}", e);
         }
