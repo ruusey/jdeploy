@@ -140,7 +140,7 @@ public class DeploymentHelper {
         final String extraParams = redirectOut == null ? "" : "> " + fileParts[0] + "/" + redirectOut;
 
         try {
-            final String[] commands = new String[] { "pkill -f " + fileParts[1], "nohup java -jar " + sourceFile + " " + extraParams + "&" };
+            final String[] commands = new String[] { "pkill -f " + fileParts[1], "nohup java -jar " + sourceFile + " " + extraParams + " &" };
             final long start = Instant.now().toEpochMilli();
             for (String command : commands) {
                 this.doRun(command);
